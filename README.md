@@ -1,268 +1,364 @@
-# Virtual Sensors Communication Protocol (vscp) [v1.1.6]
+# Virtual Sensors Communication Protocol (VSCP)
 
-This document describes the communication protocol used by the Virtual Sensors project for API communication between HMI (Human Machine Interface) and hardware components.
+This repository contains the Virtual Sensors Communication Protocol library used
+for request/response communication between an HMI/controller application and
+virtual or physical sensor hardware.
+
+- Library version: `1.4.0`
+- Protocol API version: `1.4`
+- Main include: `#include "vscp.hpp"`
+- Implementation: `libraries/vscp/src/protocol.hpp` and `libraries/vscp/src/protocol.cpp`
+
+This project uses the `VSCP` acronym for Virtual Sensors Communication Protocol.
+It is a lightweight URL-like text protocol and is not the upstream Very Simple
+Control Protocol event specification.
 
 ## Protocol Overview
 
-The protocol uses a URL-like format with key-value pairs for both requests and responses. All messages start with `?` followed by parameters separated by `&` and key-value pairs separated by `=`.
+VSCP messages use a query-string style wire format:
 
-**Format:** `?param1=value1&param2=value2&param3=value3`
+```text
+?key=value&key2=value2
+```
 
-## Protocol Class Usage
+Rules:
 
-The Protocol class provides static methods for all API operations. No instantiation is required.
+- every request starts with `?`;
+- parameters are separated by `&`;
+- keys and values are separated by the first `=`;
+- values are transferred as strings;
+- responses contain `status=1` for success or `status=0` for failure;
+- commands that target a device should return the same `id` as the request;
+- values containing `&`, `=`, spaces, or special characters need an application
+  level escaping/encoding convention.
+
+The protocol is transport-agnostic. The bundled messenger layer can be adapted
+to UART/Arduino, stdio, or another text-stream transport that preserves complete
+messages.
+
+## C++ API Model
+
+`Protocol` is a static API. No instance is required.
+
+All public command methods return `ResponseStatus`:
+
+```cpp
+struct ResponseStatus {
+    ResponseStatusEnum status; // OK or ERROR
+    std::string error;         // error message when status == ERROR
+    std::unordered_map<std::string, std::string> params;
+};
+```
+
+`params` contains additional response key/value pairs. For example, `UPDATE`
+stores returned sensor values there.
+
+Basic usage:
 
 ```cpp
 #include "vscp.hpp"
-//or #include <vscp.hpp> in Arduino IDE / PlatformIO
 
-// Initialize the protocol
-Protocol::init("MyApp", "1.0", "2.3");
-
-// Use API methods
-if (Protocol::isInitialized()) {
-    //One time connect sensor to pin
-    Protocol::connect("sensor123", 5);
+auto init = Protocol::init("VirtualSensors", "2.3");
+if (init.status != ResponseStatusEnum::OK) {
+    // init.error contains the failure reason
+    return;
 }
 
-//Update loop
-while(1)
-{
-    auto sensorData = Protocol::update("sensor123");
-    delay(100);
+auto connected = Protocol::connect("temp_sensor_01", "5");
+if (connected.status != ResponseStatusEnum::OK) {
+    return;
+}
+
+auto update = Protocol::update("temp_sensor_01");
+if (update.status == ResponseStatusEnum::OK) {
+    auto temperature = update.params["temperature"];
+    auto humidity = update.params["humidity"];
 }
 ```
 
-## API Methods
+## Commands
 
-### 1. INIT - Protocol Initialization
+| Command | Request | Success response | Purpose |
+| --- | --- | --- | --- |
+| `INIT` | `?type=INIT&app=<name>&db=<version>&api=1.3` | `?status=1` | Initialize protocol and check compatibility |
+| `CONNECT` | `?type=CONNECT&id=<uid>&pins=<csv>` | `?id=<uid>&status=1` | Bind a device to one or more pins/channels |
+| `DISCONNECT` | `?type=DISCONNECT&id=<uid>` | `?id=<uid>&status=1` | Remove the current device binding |
+| `UPDATE` | `?type=UPDATE&id=<uid>` | `?id=<uid>&status=1&key=value...` | Read current sensor/device values |
+| `CONFIG` | `?type=CONFIG&id=<uid>&key=value...` | `?id=<uid>&status=1` | Write persistent/configuration values |
+| `CONTROL` | `?type=CONTROL&id=<uid>&key=value...` | `?id=<uid>&status=1` | Write runtime/output control values |
+| `RESET` | `?type=RESET&id=<uid>` | `?id=<uid>&status=1` | Reset a device or its runtime state |
 
-Performs handshake to ensure application compatibility and version matching.
+## INIT
 
-**Request:**
-```
-?type=INIT&app=APP_NAME&version=APP_VERSION&dbversion=DB_VERSION&api=API_VERSION
-?type=INIT&dbversion=DB_VERSION&api=API_VERSION
-?type=INIT&api=API_VERSION
-?type=INIT
-```
+Initializes the messenger and verifies API/database compatibility with the
+remote side.
 
-**Response:**
-```
-?status=1/0&error=Error Message
-```
+Available overloads:
 
-**Parameters:**
-- `app`: Application name
-- `version`: Application version
-- `dbversion`: Database version 
-- `api`: API version (managed internally as constant)
-
-**Status Codes:**
-- `1`: Success - Protocol initialized
-- `0`: Failure - Check error message
-
-**Example:**
 ```cpp
-bool success = Protocol::init("VirtualSensors", "1.0", "2.3");
+ResponseStatus init_dummy();
+ResponseStatus init();
+ResponseStatus init(const std::string& db_version);
+ResponseStatus init(const std::string& app_name, const std::string& db_version);
 ```
 
-### 2. UPDATE - Request Sensor Data
+Generated requests:
 
-Requests updated data from a specific sensor.
-
-**Request:**
+```text
+?type=INIT
+?type=INIT&api=1.3
+?type=INIT&db=DB_VERSION&api=1.3
+?type=INIT&app=APP_NAME&db=DB_VERSION&api=1.3
 ```
+
+Responses:
+
+```text
+?status=1
+?status=0&error=API mismatch
+```
+
+Example:
+
+```cpp
+auto response = Protocol::init("VirtualSensors", "2.3");
+if (response.status != ResponseStatusEnum::OK) {
+    // response.error
+}
+```
+
+## UPDATE
+
+Requests current values from a device.
+
+Request:
+
+```text
 ?type=UPDATE&id=UID
 ```
 
-**Response:**
+Response:
+
+```text
+?id=UID&status=1&temperature=23.5&humidity=65.2
 ```
-?id=UID&status=1/0&param1=value1&param2=value2&...
-```
 
-**Parameters:**
-- `id`: Unique identifier of the sensor
+Example:
 
-**Returns:** Map of sensor parameters and values
-
-**Example:**
 ```cpp
-try {
-    auto data = Protocol::update("temp_sensor_01");
-    std::string temperature = data["temperature"];
-    std::string humidity = data["humidity"];
-} catch (const Exception& e) {
-    // Handle error
+auto response = Protocol::update("temp_sensor_01");
+if (response.status == ResponseStatusEnum::OK) {
+    std::string temperature = response.params["temperature"];
 }
 ```
 
-### 3. CONFIG - Configure Sensor
+## CONFIG
 
-Sends new configuration parameters from HMI to hardware.
+Writes configuration values. Use this for persistent settings or values that
+change the device profile, not for live actuator output.
 
-**Request:**
-```
-?type=CONFIG&id=UID&param1=value1&param2=value2
-```
+Request:
 
-**Response:**
-```
-?id=UID&status=1/0&error=Error Message
+```text
+?type=CONFIG&id=UID&sample_rate=1000&unit=C
 ```
 
-**Parameters:**
-- `id`: Unique identifier of the sensor
-- Additional parameters: Configuration key-value pairs
+Response:
 
-**Example:**
+```text
+?id=UID&status=1
+?id=UID&status=0&error=Invalid config value
+```
+
+Example:
+
 ```cpp
 std::unordered_map<std::string, std::string> config;
 config["sample_rate"] = "1000";
-config["threshold"] = "25.5";
+config["unit"] = "C";
 
-bool success = Protocol::config("temp_sensor_01", config);
+auto response = Protocol::config("temp_sensor_01", config);
 ```
 
-### 4. RESET - Reset Sensor
+## CONTROL
 
-Resets the specified sensor to default state.
+Writes runtime control values to a device. Use this for actuator output or
+writeable live values, such as brightness, setpoints, speed, or enabled state.
 
-**Request:**
+Request:
+
+```text
+?type=CONTROL&id=UID&brightness=80
 ```
+
+Response:
+
+```text
+?id=UID&status=1
+?id=UID&status=0&error=Value is not writable
+```
+
+Example:
+
+```cpp
+std::unordered_map<std::string, std::string> control;
+control["brightness"] = "80";
+
+auto response = Protocol::control("led_01", control);
+```
+
+## RESET
+
+Resets the specified device according to the remote implementation.
+
+Request:
+
+```text
 ?type=RESET&id=UID
 ```
 
-**Response:**
-```
-?id=UID&status=1/0
+Response:
+
+```text
+?id=UID&status=1
+?id=UID&status=0&error=Reset failed
 ```
 
-**Parameters:**
-- `id`: Unique identifier of the sensor
+Example:
 
-**Example:**
 ```cpp
-bool success = Protocol::reset("temp_sensor_01");
+auto response = Protocol::reset("temp_sensor_01");
 ```
 
-### 5. CONNECT - Connect Sensor to Pin
+## CONNECT
 
-Connects a sensor to a specific hardware pin.
+Connects a device to one or more hardware pins or logical channels.
 
-**Request:**
-```
-?type=CONNECT&id=UID&pin=PIN
-```
+Request:
 
-**Response:**
-```
-?id=UID&status=1/0
+```text
+?type=CONNECT&id=UID&pins=5
+?type=CONNECT&id=UID&pins=5,6,7
 ```
 
-**Parameters:**
-- `id`: Unique identifier of the sensor
-- `pin`: Hardware pin number
+Response:
 
-**Example:**
+```text
+?id=UID&status=1
+?id=UID&status=0&error=Pin conflict
+```
+
+Example:
+
 ```cpp
-bool success = Protocol::connect("temp_sensor_01", 5);
+auto response = Protocol::connect("temp_sensor_01", "5");
+auto multi = Protocol::connect("heater_01", "3,5,6");
 ```
 
-### 6. DISCONNECT - Disconnect Sensor
+## DISCONNECT
 
-Disconnects a sensor from its current pin.
+Disconnects a device from its current pin/channel mapping.
 
-**Request:**
-```
+Request:
+
+```text
 ?type=DISCONNECT&id=UID
 ```
 
-**Response:**
-```
-?id=UID&status=1/0
+Response:
+
+```text
+?id=UID&status=1
+?id=UID&status=0&error=Device not connected
 ```
 
-**Parameters:**
-- `id`: Unique identifier of the sensor
+Example:
 
-**Example:**
 ```cpp
-bool success = Protocol::disconnect("temp_sensor_01");
+auto response = Protocol::disconnect("temp_sensor_01");
 ```
 
 ## Error Handling
 
-All methods throw `Exception` objects on communication failures or protocol errors. Common error scenarios:
+Protocol command failures are reported through `ResponseStatus`, not by throwing
+from the command methods themselves.
 
-- **Protocol not initialized**: Call `Protocol::init()` first
-- **Communication timeout**: Check messenger connection
-- **UID mismatch**: Response UID doesn't match request UID
-- **Invalid response format**: Malformed protocol message
-- **Hardware error**: Sensor-specific error from hardware
+Common protocol-level errors:
+
+- protocol was not initialized before a device command;
+- empty `id`;
+- missing or malformed `status`;
+- response `id` does not match the request `id`;
+- remote side returned `status=0`;
+- API or database version mismatch;
+- timeout or incomplete transport response.
+
+Transport and messenger functions may still throw lower-level exceptions if the
+underlying I/O fails.
+
+Example:
 
 ```cpp
-try {
-    auto data = Protocol::update("sensor123");
-} catch (const Exception& e) {
-    std::cout << "Error: " << e.what() << std::endl;
+auto response = Protocol::update("sensor123");
+if (response.status == ResponseStatusEnum::ERROR) {
+    std::string reason = response.error;
 }
 ```
 
-## Response Validation
+## Validation Performed by the Library
 
-The protocol automatically validates:
+The current implementation validates:
 
-1. **UID Matching**: Response UID must match request UID
-2. **Status Checking**: Status field indicates success/failure
-3. **Format Validation**: Proper key-value pair structure
+- the protocol is initialized before device commands;
+- `uid`/`id` is not empty;
+- response contains the same `id` as the request for device commands;
+- response contains `status=1` before returning `OK`;
+- response `error` is propagated when the remote side reports failure.
 
 ## Utility Methods
 
-### Check Initialization Status
 ```cpp
-bool isReady = Protocol::isInitialized();
+bool ready = Protocol::isInitialized();
+std::string api = Protocol::getApiVersion(); // "1.3"
 ```
-
-### Get API Version
-```cpp
-std::string version = Protocol::getApiVersion(); // Returns "1.0"
-```
-
-## Integration
-
-The Protocol class integrates with:
-
-- **Messenger Interface**: Abstract communication layer
-- **Parser Functions**: Message parsing utilities  
-- **Exception System**: Unified error handling
-
-## Thread Safety
-
-⚠️ **Note**: The Protocol class uses static members and is not inherently thread-safe. Implement appropriate synchronization if using in multi-threaded environments.
 
 ## Example Communication Flow
 
+```text
+1. HMI -> HW: ?type=INIT&app=VirtualSensors&db=2.3&api=1.3
+2. HW  -> HMI: ?status=1
+
+3. HMI -> HW: ?type=CONNECT&id=temp_01&pins=5
+4. HW  -> HMI: ?id=temp_01&status=1
+
+5. HMI -> HW: ?type=UPDATE&id=temp_01
+6. HW  -> HMI: ?id=temp_01&status=1&temperature=23.5&humidity=65.2
+
+7. HMI -> HW: ?type=CONFIG&id=temp_01&sample_rate=500
+8. HW  -> HMI: ?id=temp_01&status=1
+
+9. HMI -> HW: ?type=CONTROL&id=led_01&brightness=80
+10. HW -> HMI: ?id=led_01&status=1
 ```
-1. HMI → HW: ?type=INIT&app=VirtualSensors&version=1.0&dbversion=2.3&api=1.0
-2. HW → HMI: ?status=1
 
-3. HMI → HW: ?type=CONNECT&id=temp_01&pin=5  
-4. HW → HMI: ?id=temp_01&status=1
+## Configuration Notes
 
-5. HMI → HW: ?type=UPDATE&id=temp_01
-6. HW → HMI: ?id=temp_01&status=1&temperature=23.5&humidity=65.2
+Protocol behavior is controlled from `libraries/vscp/src/config.hpp`.
 
-7. HMI → HW: ?type=CONFIG&id=temp_01&sample_rate=500
-8. HW → HMI: ?id=temp_01&status=1
-```
+Important defaults:
 
-## Protocol Versions
+- `MAX_PROTOCOL_REQUEST_SIZE`: `1024`
+- `PROTOCOL_VERBOSE`: `1`
+- `PROTOCOL_INIT_TIMEOUT`: `500`
+- `CASE_SENSITIVE`: `true`
+- default API version in code: `1.3`
 
-- **Current API Version**: 1.0
-- **Compatibility**: Backward compatible within major versions
-- **Version Checking**: Automatic during initialization
+## Compatibility
 
----
+Version `1.3` changes the public documentation from older README revisions:
 
-*For implementation details, see the source files: `protocol.hpp` and `protocol.cpp` in directory `vscp`*
+- command methods return `ResponseStatus` instead of returning raw maps/bools;
+- `INIT` uses `db`, not `dbversion`;
+- `CONNECT` uses `pins`, not `pin`, and accepts comma-separated values;
+- `CONTROL` is a separate command for runtime write/control values;
+- `getApiVersion()` returns `1.3`.

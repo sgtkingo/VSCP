@@ -36,8 +36,22 @@
   * 
     * @param format The format string (like in printf).
     * @param ... Additional arguments for formatting.
-  */
+ */
  void logMessage(const char *format, ...);
+
+ enum DebugVerboseLevel {
+     DEBUG_VERBOSE_ERRORS = 1,
+     DEBUG_VERBOSE_IMPORTANT = 2,
+     DEBUG_VERBOSE_ALL = 3
+ };
+
+ /**
+  * @brief Logs a formatted debug message when ENABLE_DEBUG is enabled.
+  *
+  * Output format: DEBUG: <message> reason=<reason> source=<source>
+  */
+ void debugLogMessage(int level, const char *source, const char *reason, const char *format, ...);
+ void debugLogMessage(const char *source, const char *reason, const char *format, ...);
 
 /**
   * @brief Initializes the logger system.
@@ -48,4 +62,3 @@
 
  
  #endif // LOGS_H
- 

@@ -11,14 +11,14 @@
  */
 
 #include "protocol.hpp"
-//#include <expt.hpp> // For std::exception and logs
+#include <expt.hpp>
 
 #include <sstream> // For std::stringstream
 #include <algorithm> // For std::transform
 #include <cctype> // For std::isspace
 
 // Static member definitions
-const std::string Protocol::API_VERSION = "1.2";
+const std::string Protocol::API_VERSION = "1.4";
 bool Protocol::initialized = false;
 
 // Helper function to trim whitespace and invisible characters from strings
@@ -46,6 +46,7 @@ static std::string trim(const std::string& str) {
 std::unordered_map<std::string, std::string> Protocol::parseMessage(const std::string& message, bool caseSensitive) {
     static std::unordered_map<std::string, std::string> params;
     params.clear();
+    debugLogMessage("Protocol::parseMessage", "protocol parse", "messageLength=%u caseSensitive=%d", static_cast<unsigned int>(message.size()), caseSensitive);
     
     // Remove leading '?' if present
     std::string cleanMessage = message;
@@ -76,6 +77,7 @@ std::unordered_map<std::string, std::string> Protocol::parseMessage(const std::s
         }
     }
     
+    debugLogMessage("Protocol::parseMessage", "protocol parse", "paramCount=%u", static_cast<unsigned int>(params.size()));
     return params;
 }
 
@@ -83,6 +85,7 @@ ResponseStatus Protocol::init_dummy() {
     ResponseStatus response;
     
     // First init messenger
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init_dummy", "protocol init", "dummy init");
     initMessenger();
 
     // Build initialization request
@@ -105,6 +108,7 @@ ResponseStatus Protocol::init() {
     response.status = ResponseStatusEnum::ERROR;
     
     // First init messenger
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init", "protocol init", "api=%s", API_VERSION.c_str());
     initMessenger();
     
     // Build initialization request
@@ -124,12 +128,14 @@ ResponseStatus Protocol::init() {
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Initialization failed - bad or missing status";
 
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::init", "protocol init failed", "%s", response.error.c_str());
         return response;
     } 
 
     response.status = ResponseStatusEnum::OK;
     response.error = "";
     initialized = true; 
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init", "protocol init", "initialized successfully");
     return response;
 }
 
@@ -138,6 +144,7 @@ ResponseStatus Protocol::init(const std::string& db_version) {
     response.status = ResponseStatusEnum::ERROR;
     
     // First init messenger
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init(db)", "protocol init", "db=%s api=%s", db_version.c_str(), API_VERSION.c_str());
     initMessenger();
     
     // Build initialization request
@@ -158,12 +165,14 @@ ResponseStatus Protocol::init(const std::string& db_version) {
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Initialization failed - bad or missing status";
 
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::init(db)", "protocol init failed", "%s", response.error.c_str());
         return response;
     } 
 
     response.status = ResponseStatusEnum::OK;
     response.error = "";
     initialized = true; 
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init(db)", "protocol init", "initialized successfully");
     return response;
 }
 
@@ -180,6 +189,7 @@ ResponseStatus Protocol::init(const std::string& app_name, const std::string& db
     response.status = ResponseStatusEnum::ERROR;
     
     // First init messenger
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init(app,db)", "protocol init", "app=%s db=%s api=%s", app_name.c_str(), db_version.c_str(), API_VERSION.c_str());
     initMessenger();
     
     // Build initialization request
@@ -201,12 +211,14 @@ ResponseStatus Protocol::init(const std::string& app_name, const std::string& db
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Initialization failed - bad or missing status";
         
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::init(app,db)", "protocol init failed", "%s", response.error.c_str());
         return response;
     } 
 
     response.status = ResponseStatusEnum::OK;
     response.error = "";
     initialized = true; 
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::init(app,db)", "protocol init", "initialized successfully");
     return response;
 }
 
@@ -216,11 +228,13 @@ ResponseStatus Protocol::update(const std::string& uid) {
 
     if (!initialized) {
         response.error = "Protocol not initialized";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::update", "protocol state invalid", "%s uid=%s", response.error.c_str(), uid.c_str());
         return response;
     }
     
     if (uid.empty()) {
         response.error = "UID cannot be empty";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::update", "protocol parameter invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -231,6 +245,7 @@ ResponseStatus Protocol::update(const std::string& uid) {
     // Send request and receive response
     sendMessage(request);
     std::string responseMsg = receiveMessage(PROTOCOL_VERBOSE); // Use defined verbosity for receive
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::update", "protocol io", "uid=%s request=%s response=%s", uid.c_str(), request.c_str(), responseMsg.c_str());
     
     // Parse response
     auto responseParams = parseMessage(responseMsg);
@@ -240,6 +255,7 @@ ResponseStatus Protocol::update(const std::string& uid) {
         response.status = ResponseStatusEnum::ERROR;
         response.error = "Response UID mismatch - expected: " + uid + ", received: " + 
                                 (responseParams.find("id") != responseParams.end() ? responseParams["id"] : "none");
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::update", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
     
@@ -249,6 +265,7 @@ ResponseStatus Protocol::update(const std::string& uid) {
         response.status = ResponseStatusEnum::ERROR;
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Connection failed - bad or missing status";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::update", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -264,11 +281,13 @@ ResponseStatus Protocol::config(const std::string& uid, const std::unordered_map
 
     if (!initialized) {
         response.error = "Protocol not initialized";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::config", "protocol state invalid", "%s uid=%s", response.error.c_str(), uid.c_str());
         return response;
     }
     
     if (uid.empty()) {
         response.error = "UID cannot be empty";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::config", "protocol parameter invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -284,6 +303,7 @@ ResponseStatus Protocol::config(const std::string& uid, const std::unordered_map
     // Send request and receive response
     sendMessage(request);
     std::string responseMsg = receiveMessage(PROTOCOL_VERBOSE); // Use defined verbosity for receive
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::config", "protocol io", "uid=%s paramCount=%u request=%s response=%s", uid.c_str(), static_cast<unsigned int>(config.size()), request.c_str(), responseMsg.c_str());
     
     // Parse response
     auto responseParams = parseMessage(responseMsg);
@@ -293,6 +313,7 @@ ResponseStatus Protocol::config(const std::string& uid, const std::unordered_map
         response.status = ResponseStatusEnum::ERROR;
         response.error = "Response UID mismatch - expected: " + uid + ", received: " + 
                                 (responseParams.find("id") != responseParams.end() ? responseParams["id"] : "none");
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::config", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
     
@@ -302,6 +323,57 @@ ResponseStatus Protocol::config(const std::string& uid, const std::unordered_map
         response.status = ResponseStatusEnum::ERROR;
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Connection failed - bad or missing status";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::config", "protocol response invalid", "%s", response.error.c_str());
+        return response;
+    }
+
+    response.status = ResponseStatusEnum::OK;
+    response.error = "";
+    return response;
+}
+
+ResponseStatus Protocol::control(const std::string& uid, const std::unordered_map<std::string, std::string>& control) {
+    ResponseStatus response;
+    response.status = ResponseStatusEnum::ERROR;
+
+    if (!initialized) {
+        response.error = "Protocol not initialized";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::control", "protocol state invalid", "%s uid=%s", response.error.c_str(), uid.c_str());
+        return response;
+    }
+
+    if (uid.empty()) {
+        response.error = "UID cannot be empty";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::control", "protocol parameter invalid", "%s", response.error.c_str());
+        return response;
+    }
+
+    std::string request = "?type=CONTROL";
+    request += "&id=" + uid;
+
+    for (const auto& controlParam : control) {
+        request += "&" + controlParam.first + "=" + controlParam.second;
+    }
+
+    sendMessage(request);
+    std::string responseMsg = receiveMessage(PROTOCOL_VERBOSE);
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::control", "protocol io", "uid=%s paramCount=%u request=%s response=%s", uid.c_str(), static_cast<unsigned int>(control.size()), request.c_str(), responseMsg.c_str());
+
+    auto responseParams = parseMessage(responseMsg);
+
+    if (responseParams.find("id") == responseParams.end() || responseParams["id"] != uid) {
+        response.status = ResponseStatusEnum::ERROR;
+        response.error = "Response UID mismatch - expected: " + uid + ", received: " +
+                                (responseParams.find("id") != responseParams.end() ? responseParams["id"] : "none");
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::control", "protocol response invalid", "%s", response.error.c_str());
+        return response;
+    }
+
+    if (responseParams.find("status") == responseParams.end() || responseParams["status"] != "1") {
+        response.status = ResponseStatusEnum::ERROR;
+        response.error = responseParams.find("error") != responseParams.end()
+                            ? responseParams["error"] : "Control failed - bad or missing status";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::control", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -316,11 +388,13 @@ ResponseStatus Protocol::reset(const std::string& uid) {
 
     if (!initialized) {
         response.error = "Protocol not initialized";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::reset", "protocol state invalid", "%s uid=%s", response.error.c_str(), uid.c_str());
         return response;
     }
     
     if (uid.empty()) {
         response.error = "UID cannot be empty";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::reset", "protocol parameter invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -331,6 +405,7 @@ ResponseStatus Protocol::reset(const std::string& uid) {
     // Send request and receive response
     sendMessage(request);
     std::string responseMsg = receiveMessage(PROTOCOL_VERBOSE); // Use defined verbosity for receive
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::reset", "protocol io", "uid=%s request=%s response=%s", uid.c_str(), request.c_str(), responseMsg.c_str());
     
     // Parse response
     auto responseParams = parseMessage(responseMsg);
@@ -340,6 +415,7 @@ ResponseStatus Protocol::reset(const std::string& uid) {
         response.status = ResponseStatusEnum::ERROR;
         response.error = "Response UID mismatch - expected: " + uid + ", received: " + 
                                 (responseParams.find("id") != responseParams.end() ? responseParams["id"] : "none");
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::reset", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
     
@@ -349,6 +425,7 @@ ResponseStatus Protocol::reset(const std::string& uid) {
         response.status = ResponseStatusEnum::ERROR;
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Connection failed - bad or missing status";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::reset", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -363,11 +440,13 @@ ResponseStatus Protocol::connect(const std::string& uid, const std::string& pins
 
     if (!initialized) {
         response.error = "Protocol not initialized";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::connect", "protocol state invalid", "%s uid=%s", response.error.c_str(), uid.c_str());
         return response;
     }
     
     if (uid.empty()) {
         response.error = "UID cannot be empty";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::connect", "protocol parameter invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -379,6 +458,7 @@ ResponseStatus Protocol::connect(const std::string& uid, const std::string& pins
     // Send request and receive response
     sendMessage(request);
     std::string responseMsg = receiveMessage(PROTOCOL_VERBOSE); // Use defined verbosity for receive
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::connect", "protocol io", "uid=%s pins=%s request=%s response=%s", uid.c_str(), pins.c_str(), request.c_str(), responseMsg.c_str());
     // Parse response
     auto responseParams = parseMessage(responseMsg);
     
@@ -387,6 +467,7 @@ ResponseStatus Protocol::connect(const std::string& uid, const std::string& pins
         response.status = ResponseStatusEnum::ERROR;
         response.error = "Response UID mismatch - expected: " + uid + ", received: " + 
                                 (responseParams.find("id") != responseParams.end() ? responseParams["id"] : "none");
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::connect", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
     
@@ -396,6 +477,7 @@ ResponseStatus Protocol::connect(const std::string& uid, const std::string& pins
         response.status = ResponseStatusEnum::ERROR;
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Connection failed - bad or missing status";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::connect", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -410,11 +492,13 @@ ResponseStatus Protocol::disconnect(const std::string& uid) {
 
     if (!initialized) {
         response.error = "Protocol not initialized";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::disconnect", "protocol state invalid", "%s uid=%s", response.error.c_str(), uid.c_str());
         return response;
     }
     
     if (uid.empty()) {
         response.error = "UID cannot be empty";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::disconnect", "protocol parameter invalid", "%s", response.error.c_str());
         return response;
     }
 
@@ -425,6 +509,7 @@ ResponseStatus Protocol::disconnect(const std::string& uid) {
     // Send request and receive response
     sendMessage(request);
     std::string responseMsg = receiveMessage(PROTOCOL_VERBOSE); // Use defined verbosity for receive
+    debugLogMessage(DEBUG_VERBOSE_IMPORTANT, "Protocol::disconnect", "protocol io", "uid=%s request=%s response=%s", uid.c_str(), request.c_str(), responseMsg.c_str());
     
     // Parse response
     auto responseParams = parseMessage(responseMsg);
@@ -434,6 +519,7 @@ ResponseStatus Protocol::disconnect(const std::string& uid) {
         response.status = ResponseStatusEnum::ERROR;
         response.error = "Response UID mismatch - expected: " + uid + ", received: " + 
                                 (responseParams.find("id") != responseParams.end() ? responseParams["id"] : "none");
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::disconnect", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
     
@@ -443,6 +529,7 @@ ResponseStatus Protocol::disconnect(const std::string& uid) {
         response.status = ResponseStatusEnum::ERROR;
         response.error = responseParams.find("error") != responseParams.end() 
                             ? responseParams["error"] : "Connection failed - bad or missing status";
+        debugLogMessage(DEBUG_VERBOSE_ERRORS, "Protocol::disconnect", "protocol response invalid", "%s", response.error.c_str());
         return response;
     }
 

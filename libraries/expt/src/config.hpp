@@ -23,8 +23,19 @@
 //#define STDIO_H 
 
 // Uncomment to enable LVGL support
-//#define USE_LVGL
+#define USE_LVGL
 #define SPLASHER_TIMEOUT_MS 5000  // Default splash timeout in milliseconds
+
+// Unified project debug logging switch. Exceptions are printed by their catch handlers.
+#ifndef ENABLE_DEBUG
+#define ENABLE_DEBUG 1
+#endif
+
+// Debug verbosity:
+// 1 = errors only, 2 = warnings and important operations, 3 = all debug details.
+#ifndef DEBUG_VERBOSE_LEVEL
+#define DEBUG_VERBOSE_LEVEL 2
+#endif
 
 // Uncomment to enable ESP32 platform
 //#define ESP_PLATFORM

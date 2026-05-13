@@ -27,6 +27,17 @@
 #define PROTOCOL_VERBOSE 1
 #define PROTOCOL_INIT_TIMEOUT 500
 
+// Unified project debug logging switch. Exceptions are printed by their catch handlers.
+#ifndef ENABLE_DEBUG
+#define ENABLE_DEBUG 1
+#endif
+
+// Debug verbosity:
+// 1 = errors only, 2 = warnings and important operations, 3 = all debug details.
+#ifndef DEBUG_VERBOSE_LEVEL
+#define DEBUG_VERBOSE_LEVEL 2
+#endif
+
 /// Uncomment to enable standard console applications (PC/Linux)
 //#define STDIO_H 
 

@@ -54,7 +54,7 @@ static void on_splash_msgbox_event(lv_event_t* e) {
 }
 
 void show_splash_popup(const char* title, const char* text, uint32_t autoclose_ms) {
-  static const char* btns[] = {"OK", ""};
+  static const char* btns[] = {""};
   lv_obj_t* scr = lv_scr_act();
   lv_obj_t* mbox = lv_msgbox_create(scr, title, text, btns, true);
   lv_obj_center(mbox);

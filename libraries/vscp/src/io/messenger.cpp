@@ -10,6 +10,7 @@
  * Ing. Jiri Konecny
  */
 #include "messenger.hpp"
+#include <expt.hpp>
 
 #ifdef ARDUINO_H
     #include <Arduino.h>  ///< Include Arduino 
@@ -17,6 +18,7 @@
 
     HardwareSerial UART1_VIRTUAL(UART1_PORT);
     static bool uart1_initialized = false;
+    static String receive_message_buffer;
 
     String stripMessage(const String &input, bool trim = true) {
         String out = "";
@@ -56,12 +58,11 @@
         if (strip) 
             prepMessage = stripMessage(message, true);
 
-        if (verbose >= 2) {
-            Serial.print("[SEND] ");
-            Serial.println(prepMessage);
-        }
+        debugLogMessage("sendMessageAsString", "protocol io write", "%s", prepMessage.c_str());
 
+        UART1_VIRTUAL.print('\n');
         UART1_VIRTUAL.println(prepMessage);
+        UART1_VIRTUAL.flush();
     }
 
     String receiveMessageAsString(int verbose, int timeout, bool strip) {
@@ -76,20 +77,18 @@
             msg = stripMessage(msg, true);
 
         if (msg.length()==0 && verbose>0) {
-            Serial.println("[RECV] No message received (timeout?)");
+            debugLogMessage("receiveMessageAsString", "protocol io read timeout", "timeout=%d", timeout);
         }
 
-        if (verbose >= 2) {
-            Serial.print("[RECV] ");
-            Serial.println(msg);
-        }
+        debugLogMessage("receiveMessageAsString", "protocol io read", "%s", msg.c_str());
 
         return msg;
     }
 
     const char* receiveMessageAsChars(int verbose, int timeout, bool strip) {
-        String msg = receiveMessageAsString(verbose, timeout, strip);
-        return msg.c_str();
+        // Keep the storage alive after the function returns for C-string callers.
+        receive_message_buffer = receiveMessageAsString(verbose, timeout, strip);
+        return receive_message_buffer.c_str();
     }
     
     std::string receiveMessage(int verbose, int timeout, bool strip) {
@@ -102,6 +101,7 @@
         UART1_VIRTUAL = HardwareSerial(port);
         UART1_VIRTUAL.begin(baudrate, mode, rx, tx);
         UART1_VIRTUAL.setTimeout(UART1_TIMEOUT);
+        debugLogMessage("initMessenger", "protocol io init", "baudrate=%lu port=%u rx=%d tx=%d timeout=%d", baudrate, port, rx, tx, UART1_TIMEOUT);
         return uart1_initialized = true;
     }
 

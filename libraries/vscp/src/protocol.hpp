@@ -14,6 +14,9 @@ res: ?id=UID&status=1/0&param1=value1&param2=value2...
 - config: send new configuration for sensor from HMI side to HW side
 req: ?type=CONFIG&id=UID&param1=value1&param2=value2
 res: ?id=UID&status=1/0&error=Error Message
+- control: send runtime control payload to a device output register
+req: ?type=CONTROL&id=UID&param1=value1&param2=value2
+res: ?id=UID&status=1/0&error=Error Message
 - reset: reset the sensor
 req: ?type=RESET&id=UID
 res: ?id=UID&status=1/0&error=Error Message
@@ -199,6 +202,20 @@ public:
      * @return ResponseStatus Configuration response containing status (OK/ERROR), error message if any, and response parameters
      */
     static ResponseStatus config(const std::string& uid, const std::unordered_map<std::string, std::string>& config);
+
+    /**
+     * @brief Sends runtime control payload for a device.
+     *
+     * Transmits output/control values to the remote device without changing its persistent configuration.
+     *
+     * Request format: ?type=CONTROL&id=UID&param1=value1&param2=value2
+     * Response format: ?id=UID&status=1/0&error=Error Message
+     *
+     * @param uid Unique identifier of the device
+     * @param control Control values map with key-value pairs to set
+     * @return ResponseStatus Control response containing status (OK/ERROR), error message if any, and response parameters
+     */
+    static ResponseStatus control(const std::string& uid, const std::unordered_map<std::string, std::string>& control);
     
     /**
      * @brief Resets the specified sensor to default state.
