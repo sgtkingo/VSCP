@@ -13,9 +13,9 @@
 #include "splasher.hpp"
 #include "logs.hpp"
 
-#ifdef ARDUINO_H
+#if defined(ARDUINO_H_ENV) && defined(ARDUINO)
     #include <Arduino.h>  ///< Include Arduino Serial functions
-#elif defined(STDIO_H)
+#elif defined(STDIO_H_ENV)
     #include <stdio.h>    ///< Include standard I/O functions
 #endif
 
@@ -95,7 +95,7 @@ void show_splash_popup(const char* title, const char* text, uint32_t autoclose_m
 #endif // USE_LVGL
 
 void delay_ms(unsigned int ms) {
-    #ifdef ARDUINO_H
+    #if defined(ARDUINO_H_ENV) && defined(ARDUINO)
         delay(ms); // Arduino delay
     #elif defined(_WIN32) || defined(_WIN64)
         Sleep(ms); // Windows sleep

@@ -16,9 +16,9 @@
 #include <string>
 #include "../config.hpp"     ///< Configuration.
 
-#ifdef ARDUINO_H
+#if defined(ARDUINO_H_ENV) && defined(ARDUINO)
     #include <Arduino.h>  ///< Include Arduino Serial functions
-#elif defined(STDIO_H)
+#elif defined(STDIO_H_ENV)
     #include <stdio.h>    ///< Include standard I/O functions
 #endif
 
@@ -61,7 +61,7 @@ void sendMessage(const char* message, int verbose = 0, bool strip = true);
  */
 void sendMessage(const std::string &message, int verbose = 0, bool strip = true);
 
-#ifdef ARDUINO_H
+#if defined(ARDUINO_H_ENV) && defined(ARDUINO)
 /**
  * @brief Sends a message using the global messenger.
  * 
@@ -95,7 +95,7 @@ const char* receiveMessageAsChars(int verbose = 0, int timeout = UART1_TIMEOUT, 
  */
 std::string receiveMessage(int verbose = 0, int timeout = UART1_TIMEOUT, bool strip = true);
 
-#ifdef ARDUINO_H
+#if defined(ARDUINO_H_ENV) && defined(ARDUINO)
 /**
  * @brief Receives a message using the global messenger.
  * 

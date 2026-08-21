@@ -15,8 +15,11 @@
 #define MAX_PROTOCOL_REQUEST_SIZE 1024 ///< Maximum size of a protocol request message
 
 /// Uncomment to enable Arduino-based environments
-#define ARDUINO_H 
-#ifdef ARDUINO_H
+#ifndef ARDUINO_H_ENV
+#define ARDUINO_H_ENV
+#endif
+
+#ifdef ARDUINO_H_ENV
 #define UART1_PORT 0
 #define UART1_BAUDRATE 115200
 #define UART1_RX -1
@@ -39,7 +42,7 @@
 #endif
 
 /// Uncomment to enable standard console applications (PC/Linux)
-//#define STDIO_H 
+//#define STDIO_H_ENV
 
 ///Set whatever the application should be a case sensitive
 #define CASE_SENSITIVE true

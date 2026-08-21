@@ -12,7 +12,7 @@
 #include "messenger.hpp"
 #include <expt.hpp>
 
-#ifdef ARDUINO_H
+#if defined(ARDUINO_H_ENV) && defined(ARDUINO)
     #include <Arduino.h>  ///< Include Arduino 
     #include <HardwareSerial.h> ///< Include Arduino Serial functions
 
@@ -109,7 +109,7 @@
         return initMessenger(UART1_BAUDRATE, SERIAL_8N1, UART1_RX, UART1_TX, UART1_PORT);
     }
 
-#elif defined(STDIO_H)
+#elif defined(STDIO_H_ENV)
     #include <stdio.h>    ///< Include standard I/O functions
 
     void sendMessage(const std::string &message) {
@@ -128,6 +128,6 @@
     }
 
 #else
-    #error "No valid platform defined. Please define ARDUINO_H or STDIO_H in config.hpp"
+    #error "No valid platform defined. Please define ARDUINO_H_ENV or STDIO_H_ENV in config.hpp"
     
 #endif

@@ -4,7 +4,7 @@ This repository contains the Virtual Sensors Communication Protocol library used
 for request/response communication between an HMI/controller application and
 virtual or physical sensor hardware.
 
-- Library version: `1.4.0`
+- Library version: `1.5.0`
 - Protocol API version: `1.4`
 - Main include: `#include "vscp.hpp"`
 - Implementation: `libraries/vscp/src/protocol.hpp` and `libraries/vscp/src/protocol.cpp`
@@ -53,6 +53,24 @@ struct ResponseStatus {
 `params` contains additional response key/value pairs. For example, `UPDATE`
 stores returned sensor values there.
 
+Current public API methods:
+
+```cpp
+ResponseStatus Protocol::init_dummy();
+ResponseStatus Protocol::init();
+ResponseStatus Protocol::init(const std::string& db_version);
+ResponseStatus Protocol::init(const std::string& app_name, const std::string& db_version);
+ResponseStatus Protocol::connect(const std::string& uid, const std::string& pins);
+ResponseStatus Protocol::disconnect(const std::string& uid);
+ResponseStatus Protocol::update(const std::string& uid);
+ResponseStatus Protocol::config(const std::string& uid, const std::unordered_map<std::string, std::string>& config);
+ResponseStatus Protocol::control(const std::string& uid, const std::unordered_map<std::string, std::string>& control);
+ResponseStatus Protocol::reset(const std::string& uid);
+
+bool Protocol::isInitialized();
+std::string Protocol::getApiVersion();
+```
+
 Basic usage:
 
 ```cpp
@@ -80,12 +98,12 @@ if (update.status == ResponseStatusEnum::OK) {
 
 | Command | Request | Success response | Purpose |
 | --- | --- | --- | --- |
-| `INIT` | `?type=INIT&app=<name>&db=<version>&api=1.3` | `?status=1` | Initialize protocol and check compatibility |
+| `INIT` | `?type=INIT&app=<name>&db=<version>&api=1.4` | `?status=1` | Initialize protocol and check compatibility |
 | `CONNECT` | `?type=CONNECT&id=<uid>&pins=<csv>` | `?id=<uid>&status=1` | Bind a device to one or more pins/channels |
 | `DISCONNECT` | `?type=DISCONNECT&id=<uid>` | `?id=<uid>&status=1` | Remove the current device binding |
-| `UPDATE` | `?type=UPDATE&id=<uid>` | `?id=<uid>&status=1&key=value...` | Read current sensor/device values |
-| `CONFIG` | `?type=CONFIG&id=<uid>&key=value...` | `?id=<uid>&status=1` | Write persistent/configuration values |
-| `CONTROL` | `?type=CONTROL&id=<uid>&key=value...` | `?id=<uid>&status=1` | Write runtime/output control values |
+| `UPDATE` | `?type=UPDATE&id=<uid>` | `?id=<uid>&status=1&key=value...` | Read current readable sensor/device values |
+| `CONFIG` | `?type=CONFIG&id=<uid>&key=value...` | `?id=<uid>&status=1` | Write configuration/profile values |
+| `CONTROL` | `?type=CONTROL&id=<uid>&key=value...` | `?id=<uid>&status=1` | Write runtime output/control values |
 | `RESET` | `?type=RESET&id=<uid>` | `?id=<uid>&status=1` | Reset a device or its runtime state |
 
 ## INIT
@@ -106,9 +124,9 @@ Generated requests:
 
 ```text
 ?type=INIT
-?type=INIT&api=1.3
-?type=INIT&db=DB_VERSION&api=1.3
-?type=INIT&app=APP_NAME&db=DB_VERSION&api=1.3
+?type=INIT&api=1.4
+?type=INIT&db=DB_VERSION&api=1.4
+?type=INIT&app=APP_NAME&db=DB_VERSION&api=1.4
 ```
 
 Responses:
@@ -129,7 +147,8 @@ if (response.status != ResponseStatusEnum::OK) {
 
 ## UPDATE
 
-Requests current values from a device.
+Requests current readable values from a device. Writable runtime values should
+be changed with `CONTROL` and should normally not be returned by `UPDATE`.
 
 Request:
 
@@ -183,12 +202,15 @@ auto response = Protocol::config("temp_sensor_01", config);
 ## CONTROL
 
 Writes runtime control values to a device. Use this for actuator output or
-writeable live values, such as brightness, setpoints, speed, or enabled state.
+writable live values, such as brightness, setpoints, motor speed, output level,
+or enabled state. `CONTROL` is intentionally separate from `CONFIG`: it changes
+the current runtime/output state, not the persistent device profile.
 
 Request:
 
 ```text
 ?type=CONTROL&id=UID&brightness=80
+?type=CONTROL&id=UID&set_point=32
 ```
 
 Response:
@@ -198,6 +220,14 @@ Response:
 ?id=UID&status=0&error=Value is not writable
 ```
 
+Behavior expected from a device implementation:
+
+- accept only values that the device model marks as writable/control values;
+- reject read-only values with `status=0` and an `error`;
+- acknowledge successful writes with the same `id` and `status=1`;
+- apply value ranges, steps, and type validation in the device/application
+  layer.
+
 Example:
 
 ```cpp
@@ -205,6 +235,15 @@ std::unordered_map<std::string, std::string> control;
 control["brightness"] = "80";
 
 auto response = Protocol::control("led_01", control);
+```
+
+Hybrid device example:
+
+```cpp
+std::unordered_map<std::string, std::string> regulator;
+regulator["set_point"] = "32";
+
+auto response = Protocol::control("heater_01", regulator);
 ```
 
 ## RESET
@@ -319,13 +358,13 @@ The current implementation validates:
 
 ```cpp
 bool ready = Protocol::isInitialized();
-std::string api = Protocol::getApiVersion(); // "1.3"
+std::string api = Protocol::getApiVersion(); // "1.4"
 ```
 
 ## Example Communication Flow
 
 ```text
-1. HMI -> HW: ?type=INIT&app=VirtualSensors&db=2.3&api=1.3
+1. HMI -> HW: ?type=INIT&app=VirtualSensors&db=2.3&api=1.4
 2. HW  -> HMI: ?status=1
 
 3. HMI -> HW: ?type=CONNECT&id=temp_01&pins=5
@@ -351,14 +390,14 @@ Important defaults:
 - `PROTOCOL_VERBOSE`: `1`
 - `PROTOCOL_INIT_TIMEOUT`: `500`
 - `CASE_SENSITIVE`: `true`
-- default API version in code: `1.3`
+- default API version in code: `1.4`
 
 ## Compatibility
 
-Version `1.3` changes the public documentation from older README revisions:
+Version `1.4` / library `1.5.0` documents the current protocol surface:
 
 - command methods return `ResponseStatus` instead of returning raw maps/bools;
 - `INIT` uses `db`, not `dbversion`;
 - `CONNECT` uses `pins`, not `pin`, and accepts comma-separated values;
 - `CONTROL` is a separate command for runtime write/control values;
-- `getApiVersion()` returns `1.3`.
+- `getApiVersion()` returns `1.4`.

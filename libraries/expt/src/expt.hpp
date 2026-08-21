@@ -9,8 +9,8 @@
  * systems.
  *
  * Platform Support:
- * - Arduino: Define ARDUINO_H in config.hpp
- * - Console Applications: Define STDIO_H in config.hpp  
+ * - Arduino: Define ARDUINO_H_ENV in config.hpp
+ * - Console Applications: Define STDIO_H_ENV in config.hpp
  * - LVGL GUI: Define USE_LVGL in config.hpp for splash messages
  *
  * @copyright 2025 MTA
@@ -23,8 +23,8 @@
 /*********************
  *      DEFINES
  *********************/
-// For Arduino need to be defined ARDUINO_H in config.hpp
-// For standard console applications need to be defined STDIO_H in config.hpp
+// For Arduino define ARDUINO_H_ENV in config.hpp.
+// For standard console applications define STDIO_H_ENV in config.hpp.
 // For use of LVGL library for splash messages need to be defined USE_LVGL in config.hpp
 
 /*********************
