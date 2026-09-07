@@ -13,9 +13,9 @@
 #include "splasher.hpp"
 #include "logs.hpp"
 
-#ifdef ARDUINO_H
+#if defined(ARDUINO_H_ENV) && defined(ARDUINO)
     #include <Arduino.h>  ///< Include Arduino Serial functions
-#elif defined(STDIO_H)
+#elif defined(STDIO_H_ENV)
     #include <stdio.h>    ///< Include standard I/O functions
 #endif
 
@@ -54,7 +54,7 @@ static void on_splash_msgbox_event(lv_event_t* e) {
 }
 
 void show_splash_popup(const char* title, const char* text, uint32_t autoclose_ms) {
-  static const char* btns[] = {"OK", ""};
+  static const char* btns[] = {""};
   lv_obj_t* scr = lv_scr_act();
   lv_obj_t* mbox = lv_msgbox_create(scr, title, text, btns, true);
   lv_obj_center(mbox);
@@ -95,7 +95,7 @@ void show_splash_popup(const char* title, const char* text, uint32_t autoclose_m
 #endif // USE_LVGL
 
 void delay_ms(unsigned int ms) {
-    #ifdef ARDUINO_H
+    #if defined(ARDUINO_H_ENV) && defined(ARDUINO)
         delay(ms); // Arduino delay
     #elif defined(_WIN32) || defined(_WIN64)
         Sleep(ms); // Windows sleep

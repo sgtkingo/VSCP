@@ -61,7 +61,7 @@ std::string Exception::flush(int level) const {
     for (int i = 0; i < level; i++) {
         message += buildMessage(" \t");
     }
-    message += buildMessage("(%s) Exception catch: %s\n", Source.c_str(), Message.c_str());
+    message += buildMessage("(%s) EXCEPTION: %s\n", Source.c_str(), Message.c_str());
     if (innerException) {
         message += innerException->flush(level + 1);
     }

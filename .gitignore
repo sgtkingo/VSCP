@@ -1,2 +1,39 @@
+# Ignore Visual Studio Code settings and build artifacts
 /.vscode
 build/
+
+# Ignore virtual environments and IDE settings
+/.vscode/c_cpp_properties.json
+/.vscode/launch.json
+/.vscode/settings.json
+
+# Ignore virtual environment folders
+/.venv
+
+# Ignore C++ object files, executables and libraries
+*.o
+*.obj
+*.exe
+*.out
+*.lib
+*.a
+
+# Ignore Python bytecode
+*.pyc
+*.pyo
+
+# Ignore Python cache directories
+__pycache__/
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore IDE specific files
+*.swp
+*.swo
+*.DS_Store
+
