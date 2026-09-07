@@ -1,268 +1,245 @@
-# Virtual Sensors Communication Protocol (vscp) [v1.1.6]
+# Virtual Sensors Communication Protocol (VSCP)
 
-This document describes the communication protocol used by the Virtual Sensors project for API communication between HMI (Human Machine Interface) and hardware components.
+This repository contains version `2.0.0` of the Virtual Sensors Communication
+Protocol library. It provides both sides of the protocol: a synchronous request
+`Client` for an HMI/controller and a handler-based, non-blocking `Server` for a
+device or HUB. The current wire API version is `1.4`.
 
-## Protocol Overview
+This project is not the event-based *Very Simple Control Protocol*.
 
-The protocol uses a URL-like format with key-value pairs for both requests and responses. All messages start with `?` followed by parameters separated by `&` and key-value pairs separated by `=`.
+## Architecture
 
-**Format:** `?param1=value1&param2=value2&param3=value3`
+The library is split into independent layers and does not use a global serial
+port:
 
-## Protocol Class Usage
+- `vscp::Codec` parses and serializes protocol frames;
+- `vscp::Transport` defines the line-oriented communication interface;
+- `vscp::StreamTransport` adapts an Arduino `Stream` such as `Serial1`;
+- `vscp::IostreamTransport` and `vscp::StdioTransport` support desktop programs;
+- `vscp::Client` sends requests and waits for responses;
+- `vscp::Server` dispatches incoming requests to application handlers.
 
-The Protocol class provides static methods for all API operations. No instantiation is required.
+All public components are available through:
 
 ```cpp
-#include "vscp.hpp"
-//or #include <vscp.hpp> in Arduino IDE / PlatformIO
+#include <vscp.hpp>
+```
 
-// Initialize the protocol
-Protocol::init("MyApp", "1.0", "2.3");
+## Wire format
 
-// Use API methods
-if (Protocol::isInitialized()) {
-    //One time connect sensor to pin
-    Protocol::connect("sensor123", 5);
+Each message is a line beginning with `?`. Parameters are written as
+`key=value` pairs separated by `&`:
+
+```text
+?type=UPDATE&id=S01
+?id=S01&status=1&temperature=23.5
+```
+
+Parameter order is not significant. Command names are parsed without regard to
+case; parameter names and values are case-sensitive. The codec does not perform
+URL escaping, so values must not contain `&`. Transport input is limited to
+printable ASCII and surrounding whitespace is removed.
+
+The default maximum frame length is 1024 characters. Arduino stream frames may
+be terminated with LF, CR, or NUL. Desktop transports use newline-delimited
+frames.
+
+### Commands
+
+| Command | Client call | Request parameters | Purpose |
+| --- | --- | --- | --- |
+| `INIT` | `init(app, db)` | `api`, optional `app`, optional `db` | Negotiate compatibility and open a session |
+| `CONNECT` | `connect(uid, pins)` | `id`, `pins` | Assign one or more pins, for example `"5"` or `"5,6,7"` |
+| `DISCONNECT` | `disconnect(uid)` | `id` | Remove the current pin assignment |
+| `UPDATE` | `update(uid)` | `id` | Read the current sensor/device values |
+| `CONFIG` | `config(uid, parameters)` | `id` and application parameters | Change persistent or operational configuration |
+| `CONTROL` | `control(uid, parameters)` | `id` and application parameters | Send a control value or command |
+| `RESET` | `reset(uid)` | `id` | Reset the addressed device |
+
+Every response contains `status=1` for success or `status=0` for failure. A
+failure can include `error=...`; other returned fields are command-specific:
+
+```text
+?status=1
+?id=S01&status=1&temperature=23.5
+?error=Device not found&id=S01&status=0
+```
+
+## Arduino client
+
+Create a transport for the serial interface used by VSCP, then inject it into a
+client. `init()` must succeed before any device command is sent.
+
+```cpp
+#include <vscp.hpp>
+
+vscp::StreamTransport transport(Serial1);
+vscp::Client client(transport);  // default response timeout: 500 ms
+
+void setup() {
+  Serial.begin(115200);   // diagnostics/application console
+  Serial1.begin(115200);  // VSCP connection
+
+  vscp::ResponseStatus response = client.init("hmi", "1.3");
+  if (response.status != vscp::Status::Ok) {
+    Serial.println(response.error);
+    return;
+  }
+
+  response = client.connect("S01", "5");
+  if (response.status != vscp::Status::Ok) {
+    Serial.println(response.error);
+  }
 }
 
-//Update loop
-while(1)
-{
-    auto sensorData = Protocol::update("sensor123");
-    delay(100);
-}
-```
+void loop() {
+  if (!client.isInitialized()) return;
 
-## API Methods
+  const vscp::ResponseStatus response = client.update("S01");
+  if (response.status == vscp::Status::Ok) {
+    const auto temperature = response.parameters.find("temperature");
+    if (temperature != response.parameters.end()) {
+      Serial.println(temperature->second);
+    }
+  } else {
+    Serial.println(response.error);
+  }
 
-### 1. INIT - Protocol Initialization
-
-Performs handshake to ensure application compatibility and version matching.
-
-**Request:**
-```
-?type=INIT&app=APP_NAME&version=APP_VERSION&dbversion=DB_VERSION&api=API_VERSION
-?type=INIT&dbversion=DB_VERSION&api=API_VERSION
-?type=INIT&api=API_VERSION
-?type=INIT
-```
-
-**Response:**
-```
-?status=1/0&error=Error Message
-```
-
-**Parameters:**
-- `app`: Application name
-- `version`: Application version
-- `dbversion`: Database version 
-- `api`: API version (managed internally as constant)
-
-**Status Codes:**
-- `1`: Success - Protocol initialized
-- `0`: Failure - Check error message
-
-**Example:**
-```cpp
-bool success = Protocol::init("VirtualSensors", "1.0", "2.3");
-```
-
-### 2. UPDATE - Request Sensor Data
-
-Requests updated data from a specific sensor.
-
-**Request:**
-```
-?type=UPDATE&id=UID
-```
-
-**Response:**
-```
-?id=UID&status=1/0&param1=value1&param2=value2&...
-```
-
-**Parameters:**
-- `id`: Unique identifier of the sensor
-
-**Returns:** Map of sensor parameters and values
-
-**Example:**
-```cpp
-try {
-    auto data = Protocol::update("temp_sensor_01");
-    std::string temperature = data["temperature"];
-    std::string humidity = data["humidity"];
-} catch (const Exception& e) {
-    // Handle error
-}
-```
-
-### 3. CONFIG - Configure Sensor
-
-Sends new configuration parameters from HMI to hardware.
-
-**Request:**
-```
-?type=CONFIG&id=UID&param1=value1&param2=value2
-```
-
-**Response:**
-```
-?id=UID&status=1/0&error=Error Message
-```
-
-**Parameters:**
-- `id`: Unique identifier of the sensor
-- Additional parameters: Configuration key-value pairs
-
-**Example:**
-```cpp
-std::unordered_map<std::string, std::string> config;
-config["sample_rate"] = "1000";
-config["threshold"] = "25.5";
-
-bool success = Protocol::config("temp_sensor_01", config);
-```
-
-### 4. RESET - Reset Sensor
-
-Resets the specified sensor to default state.
-
-**Request:**
-```
-?type=RESET&id=UID
-```
-
-**Response:**
-```
-?id=UID&status=1/0
-```
-
-**Parameters:**
-- `id`: Unique identifier of the sensor
-
-**Example:**
-```cpp
-bool success = Protocol::reset("temp_sensor_01");
-```
-
-### 5. CONNECT - Connect Sensor to Pin
-
-Connects a sensor to a specific hardware pin.
-
-**Request:**
-```
-?type=CONNECT&id=UID&pin=PIN
-```
-
-**Response:**
-```
-?id=UID&status=1/0
-```
-
-**Parameters:**
-- `id`: Unique identifier of the sensor
-- `pin`: Hardware pin number
-
-**Example:**
-```cpp
-bool success = Protocol::connect("temp_sensor_01", 5);
-```
-
-### 6. DISCONNECT - Disconnect Sensor
-
-Disconnects a sensor from its current pin.
-
-**Request:**
-```
-?type=DISCONNECT&id=UID
-```
-
-**Response:**
-```
-?id=UID&status=1/0
-```
-
-**Parameters:**
-- `id`: Unique identifier of the sensor
-
-**Example:**
-```cpp
-bool success = Protocol::disconnect("temp_sensor_01");
-```
-
-## Error Handling
-
-All methods throw `Exception` objects on communication failures or protocol errors. Common error scenarios:
-
-- **Protocol not initialized**: Call `Protocol::init()` first
-- **Communication timeout**: Check messenger connection
-- **UID mismatch**: Response UID doesn't match request UID
-- **Invalid response format**: Malformed protocol message
-- **Hardware error**: Sensor-specific error from hardware
-
-```cpp
-try {
-    auto data = Protocol::update("sensor123");
-} catch (const Exception& e) {
-    std::cout << "Error: " << e.what() << std::endl;
+  delay(1000);
 }
 ```
 
-## Response Validation
+Configuration and control values are supplied with `vscp::Parameters`, which is
+a map of `vscp::String` keys and values:
 
-The protocol automatically validates:
-
-1. **UID Matching**: Response UID must match request UID
-2. **Status Checking**: Status field indicates success/failure
-3. **Format Validation**: Proper key-value pair structure
-
-## Utility Methods
-
-### Check Initialization Status
 ```cpp
-bool isReady = Protocol::isInitialized();
+client.config("S01", vscp::Parameters{{"sample_rate", "1000"}});
+client.control("H00", vscp::Parameters{{"set_point", "35"}});
+client.reset("S01");
+client.disconnect("S01");
 ```
 
-### Get API Version
+The client validates the response format and, for device commands, verifies
+that the response contains the requested `id`. Communication and protocol
+errors are returned as `Status::Error` with text in `ResponseStatus::error`;
+normal protocol operations do not throw exceptions.
+
+## Arduino server
+
+Register one handler for every supported command, add the transport, and call
+`poll()` frequently from the main loop:
+
 ```cpp
-std::string version = Protocol::getApiVersion(); // Returns "1.0"
+#include <vscp.hpp>
+
+vscp::StreamTransport transport(Serial1);
+vscp::Server server;
+
+void setup() {
+  Serial1.begin(115200);
+  server.addTransport(transport);
+
+  server.on(vscp::Command::Init, [](const vscp::Request& request) {
+    if (request.value("api") != vscp::API_VERSION) {
+      return vscp::Response::fail("API mismatch");
+    }
+    return vscp::Response::ok();
+  });
+
+  server.on(vscp::Command::Connect, [](const vscp::Request& request) {
+    if (!request.has("id")) return vscp::Response::fail("Missing id");
+    if (request.value("pins").length() == 0) {
+      return vscp::Response::fail("Missing pins");
+    }
+
+    // Connect request.value("id") to request.value("pins").
+    return vscp::Response::ok();
+  });
+
+  server.on(vscp::Command::Update, [](const vscp::Request& request) {
+    if (request.value("id") != "S01") {
+      return vscp::Response::fail("Device not found");
+    }
+
+    vscp::Response response = vscp::Response::ok();
+    response.parameters["temperature"] = "23.5";
+    return response;
+  });
+}
+
+void loop() {
+  server.poll();
+}
 ```
 
-## Integration
+`poll()` processes at most one complete frame from each registered transport on
+each call. The Arduino transport itself is non-blocking. Initialization state is
+tracked separately for every transport, and non-`INIT` requests are rejected
+until that endpoint completes a successful `INIT` handler. The server
+automatically copies a request `id` into the response unless the handler already
+provided one.
 
-The Protocol class integrates with:
+Handlers receive the complete parsed `vscp::Request`. Use `request.has(key)` to
+distinguish a missing parameter from an empty value and `request.value(key)` to
+read it. A handler returns either `vscp::Response::ok()` or
+`vscp::Response::fail(message)` and may add response parameters.
 
-- **Messenger Interface**: Abstract communication layer
-- **Parser Functions**: Message parsing utilities  
-- **Exception System**: Unified error handling
+## Desktop transports
 
-## Thread Safety
+Desktop builds expose C++ stream and C `FILE*` adapters by default:
 
-⚠️ **Note**: The Protocol class uses static members and is not inherently thread-safe. Implement appropriate synchronization if using in multi-threaded environments.
-
-## Example Communication Flow
-
-```
-1. HMI → HW: ?type=INIT&app=VirtualSensors&version=1.0&dbversion=2.3&api=1.0
-2. HW → HMI: ?status=1
-
-3. HMI → HW: ?type=CONNECT&id=temp_01&pin=5  
-4. HW → HMI: ?id=temp_01&status=1
-
-5. HMI → HW: ?type=UPDATE&id=temp_01
-6. HW → HMI: ?id=temp_01&status=1&temperature=23.5&humidity=65.2
-
-7. HMI → HW: ?type=CONFIG&id=temp_01&sample_rate=500
-8. HW → HMI: ?id=temp_01&status=1
+```cpp
+vscp::IostreamTransport cppTransport(std::cin, std::cout);
+vscp::StdioTransport cTransport(stdin, stdout);
 ```
 
-## Protocol Versions
+These adapters perform blocking line reads. A desktop server event loop should
+therefore run a blocking transport on a dedicated input thread. A client timeout
+cannot interrupt a blocking `std::getline()` or `fgets()` call; use a custom
+non-blocking transport when a strict timeout is required.
 
-- **Current API Version**: 1.0
-- **Compatibility**: Backward compatible within major versions
-- **Version Checking**: Automatic during initialization
+To support another communication channel, derive from `vscp::Transport` and
+implement `readLineImpl()` and `writeLineImpl()`. Return `ReadStatus::NoData`,
+`ReadStatus::Message`, or `ReadStatus::MessageTooLong` as appropriate.
 
----
+## Diagnostics
 
-*For implementation details, see the source files: `protocol.hpp` and `protocol.cpp` in directory `vscp`*
+Diagnostics are compile-time controlled by `PROTOCOL_VERBOSE`:
+
+- `0`: disabled;
+- `1`: framing and write errors;
+- `2`: errors plus complete `[VSCP][RX]` and `[VSCP][TX]` frames.
+
+A log sink must be explicitly attached. Keep diagnostics on a different channel
+from the protocol so log text cannot be interpreted as a VSCP frame:
+
+```cpp
+vscp::StreamLogSink debugLog(Serial);
+vscp::StreamTransport transport(
+    Serial1, vscp::MAX_MESSAGE_SIZE, &debugLog);
+```
+
+On desktop, use `vscp::IostreamLogSink` or `vscp::StdioLogSink`. The sink can be
+changed later with `Transport::setLogSink()`.
+
+## Compile-time configuration
+
+Defaults live in `libraries/vscp/src/config.hpp` and can be overridden with
+compiler definitions:
+
+| Definition | Default | Meaning |
+| --- | --- | --- |
+| `VSCP_API_VERSION` | `"1.4"` | API version sent by `Client::init()` |
+| `MAX_PROTOCOL_REQUEST_SIZE` | `1024` | Maximum protocol frame size |
+| `PROTOCOL_INIT_TIMEOUT` | `500` | Default client response timeout in milliseconds |
+| `PROTOCOL_VERBOSE` | `1` | Diagnostic verbosity |
+| `VSCP_ENABLE_IOSTREAM` | `1` | Include the desktop C++ stream adapter |
+| `VSCP_ENABLE_STDIO` | `1` | Include the desktop C stdio adapter |
+
+The environment is selected automatically: Arduino builds define
+`ARDUINO_H_ENV`, while desktop builds default to `STDIO_H_ENV`. Defining both is
+an error.
+
+For implementation-specific notes and upstream provenance, see
+[`libraries/vscp/README.md`](libraries/vscp/README.md) and
+[`libraries/vscp/UPSTREAM.md`](libraries/vscp/UPSTREAM.md).
